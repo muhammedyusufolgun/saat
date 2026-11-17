@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -21,6 +22,7 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var root: FrameLayout
     private lateinit var clockText: TextView
     private lateinit var dateText: TextView
     private lateinit var brightnessPanel: LinearLayout
@@ -30,16 +32,20 @@ class MainActivity : Activity() {
     private lateinit var leftMark: TextView
     private lateinit var rightMark: TextView
     private lateinit var brightnessValue: TextView
+    private val paletteSwatches = mutableListOf<View>()
     private var brightness = 0.60f
     private var textColor = Color.WHITE
 
     private val palette = intArrayOf(
-        0xFFFFFFFF.toInt(), 0xFFF5F0E6.toInt(), 0xFFBFC7D5.toInt(), 0xFF858FA1.toInt(),
-        0xFFFF6B6B.toInt(), 0xFFFF8A65.toInt(), 0xFFFFA726.toInt(), 0xFFFFCA28.toInt(),
-        0xFFFFEE58.toInt(), 0xFFAED581.toInt(), 0xFF66BB6A.toInt(), 0xFF26A69A.toInt(),
-        0xFF26C6DA.toInt(), 0xFF4DD0E1.toInt(), 0xFF4FC3F7.toInt(), 0xFF42A5F5.toInt(),
-        0xFF5C6BC0.toInt(), 0xFF7E57C2.toInt(), 0xFFAB47BC.toInt(), 0xFFEC407A.toInt(),
-        0xFFF06292.toInt(), 0xFFEF5350.toInt(), 0xFF9CCC65.toInt(), 0xFFFFD54F.toInt()
+        0xFFFFFFFF.toInt(), 0xFFF5F0E6.toInt(), 0xFFCFD8DC.toInt(), 0xFF8D99AE.toInt(),
+        0xFFFF0000.toInt(), 0xFFB71C1C.toInt(), 0xFFFF6F61.toInt(), 0xFFFF5722.toInt(),
+        0xFFFF9800.toInt(), 0xFFFFFF00.toInt(), 0xFFC6FF00.toInt(), 0xFF00FF00.toInt(),
+        0xFF8BC34A.toInt(), 0xFF009688.toInt(), 0xFF00BFA5.toInt(), 0xFF00FFFF.toInt(),
+        0xFF80DEEA.toInt(), 0xFF81D4FA.toInt(), 0xFF40C4FF.toInt(), 0xFF0000FF.toInt(),
+        0xFF0D47A1.toInt(), 0xFF3F51B5.toInt(), 0xFF673AB7.toInt(), 0xFF800080.toInt(),
+        0xFFFF00FF.toInt(), 0xFFE040FB.toInt(), 0xFFFF4081.toInt(), 0xFFE91E63.toInt(),
+        0xFF795548.toInt(), 0xFFD7CCC8.toInt(), 0xFFFFD700.toInt(), 0xFFCDDC39.toInt(),
+        0xFF00E676.toInt(), 0xFFD1C4E9.toInt(), 0xFF607D8B.toInt()
     )
 
     private val clockUpdater = object : Runnable {
@@ -49,14 +55,13 @@ class MainActivity : Activity() {
         }
     }
 
-    private val hideAffordances = Runnable {
-        if ((!::brightnessPanel.isInitialized || brightnessPanel.visibility != View.VISIBLE) &&
-            (!::colorPanel.isInitialized || colorPanel.visibility != View.VISIBLE)) {
-            leftMark.visibility = View.INVISIBLE
-            rightMark.visibility = View.INVISIBLE
-            leftEdge.background = null
-            rightEdge.background = null
-        }
+    private val hideTouchUi = Runnable {
+        if (::brightnessPanel.isInitialized) brightnessPanel.visibility = View.GONE
+        if (::colorPanel.isInitialized) colorPanel.visibility = View.GONE
+        if (::leftMark.isInitialized) leftMark.visibility = View.INVISIBLE
+        if (::rightMark.isInitialized) rightMark.visibility = View.INVISIBLE
+        if (::leftEdge.isInitialized) leftEdge.background = null
+        if (::rightEdge.isInitialized) rightEdge.background = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,27 +95,18 @@ class MainActivity : Activity() {
             addView(dateText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         }
 
-        val root = FrameLayout(this).apply {
+        root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             isClickable = true
             addView(centerGroup, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         }
-
-        val signature = TextView(this).apply {
-            text = "Muhammed Yusuf OLGUN"
-            setTextColor(Color.rgb(112, 112, 112))
-            textSize = 12f
-            gravity = Gravity.CENTER
-            letterSpacing = 0.04f
-        }
-        root.addView(signature, FrameLayout.LayoutParams(-1, dp(28), Gravity.BOTTOM))
 
         brightnessPanel = createBrightnessPanel()
         colorPanel = createColorPanel()
         root.addView(brightnessPanel, FrameLayout.LayoutParams(dp(260), -2, Gravity.START or Gravity.CENTER_VERTICAL).apply {
             leftMargin = dp(54)
         })
-        root.addView(colorPanel, FrameLayout.LayoutParams(dp(304), -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+        root.addView(colorPanel, FrameLayout.LayoutParams(dp(320), -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
             rightMargin = dp(54)
         })
         brightnessPanel.visibility = View.GONE
@@ -122,7 +118,6 @@ class MainActivity : Activity() {
         rightEdge = edgeArea(rightMark, Gravity.END)
         root.addView(leftEdge, FrameLayout.LayoutParams(dp(48), -1, Gravity.START))
         root.addView(rightEdge, FrameLayout.LayoutParams(dp(48), -1, Gravity.END))
-
         leftEdge.setOnClickListener { showBrightnessPanel() }
         rightEdge.setOnClickListener { showColorPanel() }
         root.setOnClickListener { revealEdgeAreas() }
@@ -175,19 +170,20 @@ class MainActivity : Activity() {
             topMargin = dp(8)
             bottomMargin = dp(4)
         })
-        panel.addView(closeButton { hidePanels() })
+        panel.addView(closeButton { scheduleHide() })
         return panel
     }
 
     private fun createColorPanel(): LinearLayout {
         val panel = panelContainer()
-        panel.addView(panelTitle("YAZI RENGİ • 24 RENK"))
+        panel.addView(panelTitle("YAZI RENGİ • 35 RENK"))
         val grid = GridLayout(this).apply {
-            columnCount = 6
-            rowCount = 4
+            columnCount = 7
+            rowCount = 5
             useDefaultMargins = false
             alignmentMode = GridLayout.ALIGN_BOUNDS
         }
+        paletteSwatches.clear()
         for (color in palette) {
             val swatch = View(this).apply {
                 contentDescription = "Yazı rengi"
@@ -200,36 +196,43 @@ class MainActivity : Activity() {
                     refreshColorPanel()
                 }
             }
+            paletteSwatches.add(swatch)
             val params = GridLayout.LayoutParams().apply {
-                width = dp(42)
-                height = dp(42)
+                width = dp(38)
+                height = dp(38)
                 setMargins(dp(1), dp(1), dp(1), dp(1))
                 rowSpec = GridLayout.spec(GridLayout.UNDEFINED)
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED)
             }
             grid.addView(swatch, params)
         }
+
         panel.addView(grid, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(8)
-            bottomMargin = dp(6)
+            topMargin = dp(7)
+            bottomMargin = dp(3)
         })
-        panel.addView(closeButton { hidePanels() })
+        panel.addView(closeButton { scheduleHide() })
+        val signature = TextView(this).apply {
+            text = "Muhammed Yusuf OLGUN"
+            setTextColor(Color.rgb(174, 184, 199))
+            textSize = 11f
+            gravity = Gravity.CENTER
+            letterSpacing = 0.03f
+            setPadding(0, dp(5), 0, 0)
+        }
+        panel.addView(signature, LinearLayout.LayoutParams(-1, -2))
         return panel
     }
 
     private fun refreshColorPanel() {
-        colorPanel.removeAllViews()
-        val rebuilt = createColorPanel()
-        while (rebuilt.childCount > 0) {
-            val child = rebuilt.getChildAt(0)
-            rebuilt.removeViewAt(0)
-            colorPanel.addView(child)
+        paletteSwatches.forEachIndexed { index, swatch ->
+            swatch.background = swatchBackground(palette[index], palette[index] == textColor)
         }
     }
 
     private fun panelContainer() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(12), dp(14), dp(12))
+        setPadding(dp(14), dp(10), dp(14), dp(8))
         background = roundedBackground(Color.argb(238, 19, 25, 37), dp(16))
         elevation = dp(8).toFloat()
     }
@@ -247,7 +250,7 @@ class MainActivity : Activity() {
         setTextColor(Color.rgb(145, 162, 188))
         textSize = 12f
         gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        setPadding(0, dp(6), 0, dp(2))
+        setPadding(0, dp(5), 0, dp(1))
         setOnClickListener { action() }
     }
 
@@ -275,22 +278,19 @@ class MainActivity : Activity() {
         revealEdgeAreas()
         brightnessPanel.visibility = View.GONE
         colorPanel.visibility = View.VISIBLE
-        refreshColorPanel()
     }
 
     private fun revealEdgeAreas() {
-        handler.removeCallbacks(hideAffordances)
+        handler.removeCallbacks(hideTouchUi)
         leftMark.visibility = View.VISIBLE
         rightMark.visibility = View.VISIBLE
         leftEdge.background = roundedBackground(Color.argb(34, 255, 255, 255), dp(18))
         rightEdge.background = roundedBackground(Color.argb(34, 255, 255, 255), dp(18))
-        handler.postDelayed(hideAffordances, 4000L)
     }
 
-    private fun hidePanels() {
-        brightnessPanel.visibility = View.GONE
-        colorPanel.visibility = View.GONE
-        handler.postDelayed(hideAffordances, 1200L)
+    private fun scheduleHide() {
+        handler.removeCallbacks(hideTouchUi)
+        handler.postDelayed(hideTouchUi, 1000L)
     }
 
     private fun swatchBackground(color: Int, selected: Boolean) = GradientDrawable().apply {
@@ -304,6 +304,21 @@ class MainActivity : Activity() {
         cornerRadius = radius.toFloat()
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                handler.removeCallbacks(hideTouchUi)
+                if (::root.isInitialized) revealEdgeAreas()
+            }
+            MotionEvent.ACTION_MOVE -> handler.removeCallbacks(hideTouchUi)
+        }
+        val handled = super.dispatchTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> scheduleHide()
+        }
+        return handled
+    }
+
     override fun onResume() {
         super.onResume()
         enterImmersiveMode()
@@ -313,6 +328,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         handler.removeCallbacks(clockUpdater)
+        handler.removeCallbacks(hideTouchUi)
         super.onPause()
     }
 
