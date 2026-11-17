@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseKeystorePath = System.getenv("MASASAATI_KEYSTORE_FILE")
+
 android {
     namespace = "tr.com.olgun.masasaati"
     compileSdk = 35
@@ -11,8 +13,26 @@ android {
         applicationId = "tr.com.olgun.masasaati"
         minSdk = 23
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (!releaseKeystorePath.isNullOrBlank()) {
+                storeFile = file(releaseKeystorePath)
+            }
+            storePassword = System.getenv("MASASAATI_KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("MASASAATI_KEY_ALIAS") ?: ""
+            keyPassword = System.getenv("MASASAATI_KEY_PASSWORD") ?: ""
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
