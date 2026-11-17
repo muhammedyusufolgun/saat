@@ -1,12 +1,10 @@
 # masa-saati
 
-Android için yatay tam ekran dijital masa saati.
+Yatay tam ekran dijital masa saati. Büyük 24 saat biçimli saat saniyeleriyle güncellenir; Türkçe tarih saatin altında, ad ise ekranın en altındadır.
 
-- Siyah arka plan üzerinde ortalanmış, 24 saat biçiminde HH:mm saat
-- Saatin altında Türkçe gün ve tarih
-- Ekran açık kalır ve yatay kullanıma kilitlenir
-- Sol kenardan yukarı/aşağı sürükleyerek parlaklık ayarı
-- Sağ kenara dokunarak veya saat alanına uzun basarak yazı rengi seçimi
-- Krem renkli, kabartma SS:DD uygulama simgesi
+- Sol kenardaki saydam alana dokunup parlaklık çubuğunu açın.
+- Sağ kenardaki saydam alana dokunup 24 renkli yazı paletini açın.
+- Kenar kontrolleri dokunulduğunda görünür, seçimler saklanır.
+- Krem kabartma uygulama simgesinde 23:59 yazar.
 
-Android Studio ile açıp debug APK derleyin. GitHub Actions her main güncellemesinde dosya adı saat.apk olan APK artifact'i üretir.
+GitHub Actions derlemesi, indirilebilir saat.apk dosyasını saat-apk adlı artifact olarak yayımlar.
