@@ -162,6 +162,7 @@ class MainActivity : Activity() {
                 override fun onStopTrackingTouch(bar: SeekBar?) {
                     getSharedPreferences("clock_settings", MODE_PRIVATE).edit()
                         .putFloat("brightness", brightness).apply()
+                    scheduleHide()
                 }
             })
         }
@@ -194,6 +195,7 @@ class MainActivity : Activity() {
                         .putInt("text_color", textColor).apply()
                     applyTextColor()
                     refreshColorPanel()
+                    scheduleHide()
                 }
             }
             paletteSwatches.add(swatch)
