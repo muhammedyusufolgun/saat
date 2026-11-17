@@ -1,18 +1,16 @@
 package tr.com.olgun.masasaati
 
 import android.app.Activity
-import android.content.res.Configuration
+import android.app.AlertDialog
 import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.format.DateFormat
-import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.text.SimpleDateFormat
@@ -22,12 +20,29 @@ import java.util.Locale
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var clockText: TextView
-    private lateinit var secondsText: TextView
     private lateinit var dateText: TextView
-    private lateinit var gestureDetector: GestureDetector
-    private val brightnessLevels = floatArrayOf(0.25f, 0.60f, 1.0f)
-    private var brightnessIndex = 1
-    private var showSeconds = true
+    private var brightness = 0.60f
+    private var textColor = Color.WHITE
+    private var gestureStartY = 0f
+    private var gestureStartBrightness = 0.60f
+    private var leftEdgeGesture = false
+    private var rightEdgeGesture = false
+
+    private val paletteNames = arrayOf(
+        "Beyaz", "Turkuaz", "Açık mavi", "Yeşil",
+        "Sarı", "Turuncu", "Kırmızı", "Mor"
+    )
+    private val paletteColors = intArrayOf(
+        Color.WHITE,
+        Color.rgb(75, 224, 220),
+        Color.rgb(91, 174, 255),
+        Color.rgb(100, 230, 142),
+        Color.rgb(255, 226, 112),
+        Color.rgb(255, 166, 89),
+        Color.rgb(255, 104, 115),
+        Color.rgb(198, 143, 255)
+    )
+
     private val clockUpdater = object : Runnable {
         override fun run() {
             updateClock()
@@ -37,107 +52,65 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.statusBarColor = Color.rgb(8, 11, 18)
-        window.navigationBarColor = Color.rgb(8, 11, 18)
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
 
         val preferences = getSharedPreferences("clock_settings", MODE_PRIVATE)
-        showSeconds = preferences.getBoolean("show_seconds", true)
-        brightnessIndex = preferences.getInt("brightness", 1).coerceIn(0, brightnessLevels.lastIndex)
+        brightness = preferences.getFloat("brightness", 0.60f).coerceIn(0.01f, 1f)
+        textColor = preferences.getInt("text_color", Color.WHITE)
 
         clockText = TextView(this).apply {
-            setTextColor(Color.WHITE)
+            setTextColor(textColor)
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTypeface(typeface, Typeface.BOLD)
-            letterSpacing = -0.035f
-        }
-        secondsText = TextView(this).apply {
-            setTextColor(Color.rgb(98, 213, 255))
-            gravity = Gravity.CENTER
-            includeFontPadding = false
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = -0.025f
         }
         dateText = TextView(this).apply {
-            setTextColor(Color.rgb(181, 192, 210))
             gravity = Gravity.CENTER
-            letterSpacing = 0.06f
-        }
-        val hintText = TextView(this).apply {
-            setTextColor(Color.rgb(111, 125, 148))
-            gravity = Gravity.CENTER
-            text = "Dokun: parlaklık   •   Çift dokun: saniye"
-            textSize = 12f
+            includeFontPadding = false
+            letterSpacing = 0.04f
         }
 
-        val timeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(clockText, LinearLayout.LayoutParams(-2, -2))
-            addView(secondsText, LinearLayout.LayoutParams(-2, -2).apply {
-                leftMargin = dp(8)
-                topMargin = dp(28)
-            })
-        }
-
-        val title = TextView(this).apply {
-            text = "MASA SAATİ"
-            setTextColor(Color.rgb(98, 213, 255))
-            textSize = 13f
-            letterSpacing = 0.24f
-            gravity = Gravity.CENTER
-        }
-
-        val content = LinearLayout(this).apply {
+        val centerGroup = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(20), dp(20), dp(20), dp(20))
-            addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(24) })
-            addView(timeRow, LinearLayout.LayoutParams(-1, -2))
+            addView(clockText, LinearLayout.LayoutParams(-1, -2))
             addView(dateText, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(22)
-                bottomMargin = dp(40)
+                topMargin = dp(8)
             })
-            addView(hintText, LinearLayout.LayoutParams(-1, -2))
         }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(centerGroup, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        }
+
+        val helpText = TextView(this).apply {
+            text = "Sol kenar: parlaklık   •   Sağ kenar: yazı rengi"
+            setTextColor(Color.rgb(82, 82, 82))
+            textSize = 11f
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(8, 11, 18))
-            addView(content, LinearLayout.LayoutParams(-1, -2))
         }
-        setContentView(root)
+        root.addView(helpText, FrameLayout.LayoutParams(-1, dp(30), Gravity.BOTTOM))
 
-        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(event: MotionEvent): Boolean = true
-
-            override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
-                brightnessIndex = (brightnessIndex + 1) % brightnessLevels.size
-                applyBrightness()
-                getSharedPreferences("clock_settings", MODE_PRIVATE).edit()
-                    .putInt("brightness", brightnessIndex).apply()
-                return true
-            }
-
-            override fun onDoubleTap(event: MotionEvent): Boolean {
-                showSeconds = !showSeconds
-                getSharedPreferences("clock_settings", MODE_PRIVATE).edit()
-                    .putBoolean("show_seconds", showSeconds).apply()
-                updateClock()
-                return true
-            }
-        })
+        root.setOnTouchListener { view, event -> handleEdgeGesture(view, event) }
+        centerGroup.setOnLongClickListener {
+            showColorPicker()
+            true
+        }
 
         root.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
             val widthDp = (right - left) / resources.displayMetrics.density
-            val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val mainSize = (widthDp * if (landscape) 0.19f else 0.205f).coerceIn(58f, 142f)
-            clockText.textSize = mainSize
-            secondsText.textSize = (mainSize * 0.34f).coerceAtLeast(22f)
-            dateText.textSize = (mainSize * 0.19f).coerceIn(15f, 23f)
+            clockText.textSize = (widthDp * 0.22f).coerceIn(72f, 190f)
+            dateText.textSize = 18f
         }
 
+        setContentView(root)
         applyBrightness()
+        applyTextColor()
         updateClock()
     }
 
@@ -165,33 +138,83 @@ class MainActivity : Activity() {
             )
     }
 
+    private fun handleEdgeGesture(view: View, event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val edgeWidth = dp(72)
+                leftEdgeGesture = event.x <= edgeWidth
+                rightEdgeGesture = event.x >= view.width - edgeWidth
+                gestureStartY = event.rawY
+                gestureStartBrightness = brightness
+                return leftEdgeGesture || rightEdgeGesture
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                if (leftEdgeGesture) {
+                    val screenHeight = view.height.toFloat().coerceAtLeast(1f)
+                    val verticalChange = (event.rawY - gestureStartY) / screenHeight
+                    brightness = (gestureStartBrightness - verticalChange).coerceIn(0.01f, 1f)
+                    applyBrightness()
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_UP -> {
+                if (leftEdgeGesture) {
+                    getSharedPreferences("clock_settings", MODE_PRIVATE).edit()
+                        .putFloat("brightness", brightness).apply()
+                    leftEdgeGesture = false
+                    return true
+                }
+                if (rightEdgeGesture) {
+                    val moved = kotlin.math.abs(event.rawY - gestureStartY)
+                    rightEdgeGesture = false
+                    if (moved < dp(24)) showColorPicker()
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                leftEdgeGesture = false
+                rightEdgeGesture = false
+                return true
+            }
+        }
+        return leftEdgeGesture || rightEdgeGesture
+    }
+
+    private fun showColorPicker() {
+        AlertDialog.Builder(this)
+            .setTitle("Yazı rengi")
+            .setSingleChoiceItems(paletteNames, paletteColors.indexOf(textColor)) { dialog, which ->
+                textColor = paletteColors[which]
+                applyTextColor()
+                getSharedPreferences("clock_settings", MODE_PRIVATE).edit()
+                    .putInt("text_color", textColor).apply()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Kapat", null)
+            .show()
+    }
+
     private fun applyBrightness() {
         val params = window.attributes
-        params.screenBrightness = brightnessLevels[brightnessIndex]
+        params.screenBrightness = brightness
         window.attributes = params
+    }
+
+    private fun applyTextColor() {
+        clockText.setTextColor(textColor)
+        dateText.setTextColor((textColor and 0x00FFFFFF) or (0xB8 shl 24))
     }
 
     private fun updateClock() {
         val now = Date()
-        val is24Hour = DateFormat.is24HourFormat(this)
-        clockText.text = SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm", Locale.getDefault())
-            .format(now)
-        val secondsPattern = if (is24Hour) "ss" else "ss a"
-        secondsText.text = SimpleDateFormat(secondsPattern, Locale.getDefault())
-            .format(now).uppercase(Locale.getDefault())
-        secondsText.visibility = if (showSeconds) View.VISIBLE else View.GONE
+        clockText.text = SimpleDateFormat("HH:mm", Locale("tr", "TR")).format(now)
         dateText.text = SimpleDateFormat("EEEE, d MMMM yyyy", Locale("tr", "TR"))
-            .format(now).uppercase(Locale("tr", "TR"))
+            .format(now).replaceFirstChar { it.uppercase(Locale("tr", "TR")) }
     }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
-
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        return if (::gestureDetector.isInitialized && gestureDetector.onTouchEvent(event)) {
-            true
-        } else {
-            super.dispatchTouchEvent(event)
-        }
-    }
 }

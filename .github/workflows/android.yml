@@ -37,8 +37,11 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug
 
+      - name: Name APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/saat.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: masa-saati-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: saat-apk
+          path: app/build/outputs/apk/debug/saat.apk
