@@ -1,4 +1,4 @@
-name: Android build
+name: Android release build
 
 on:
   push:
@@ -34,51 +34,57 @@ jobs:
       - name: Install Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Prepare signing
+      - name: Validate release signing secrets
         env:
           MASASAATI_KEYSTORE_BASE64: ${{ secrets.MASASAATI_KEYSTORE_BASE64 }}
           MASASAATI_KEYSTORE_PASSWORD: ${{ secrets.MASASAATI_KEYSTORE_PASSWORD }}
           MASASAATI_KEY_ALIAS: ${{ secrets.MASASAATI_KEY_ALIAS }}
           MASASAATI_KEY_PASSWORD: ${{ secrets.MASASAATI_KEY_PASSWORD }}
         run: |
-          if [ -n "$MASASAATI_KEYSTORE_BASE64" ]; then
-            for name in MASASAATI_KEYSTORE_PASSWORD MASASAATI_KEY_ALIAS MASASAATI_KEY_PASSWORD; do
-              if [ -z "${!name}" ]; then
-                echo "Missing required signing secret: $name"
-                exit 1
-              fi
-            done
-            key_path="$RUNNER_TEMP/masa-saati-release.jks"
-            printf '%s' "$MASASAATI_KEYSTORE_BASE64" | base64 --decode > "$key_path"
-            test -s "$key_path"
-            echo "MASASAATI_KEYSTORE_FILE=$key_path" >> "$GITHUB_ENV"
-            echo "MASASAATI_KEYSTORE_PASSWORD=$MASASAATI_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "MASASAATI_KEY_ALIAS=$MASASAATI_KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "MASASAATI_KEY_PASSWORD=$MASASAATI_KEY_PASSWORD" >> "$GITHUB_ENV"
-            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
-          else
-            echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
+          set -euo pipefail
+          for name in MASASAATI_KEYSTORE_BASE64 MASASAATI_KEYSTORE_PASSWORD MASASAATI_KEY_ALIAS MASASAATI_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing signing secret::$name is not set"
+              exit 1
+            fi
+          done
+
+          key_path="$RUNNER_TEMP/masa-saati-release.jks"
+          if ! printf '%s' "$MASASAATI_KEYSTORE_BASE64" | base64 --decode > "$key_path"; then
+            echo "::error title=Invalid keystore::MASASAATI_KEYSTORE_BASE64 is not valid Base64"
+            exit 1
+          fi
+          if [ ! -s "$key_path" ]; then
+            echo "::error title=Empty keystore::Decoded keystore file is empty"
+            exit 1
+          fi
+          if ! keytool -list -keystore "$key_path" -storepass "$MASASAATI_KEYSTORE_PASSWORD" -alias "$MASASAATI_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error title=Keystore validation failed::Check the keystore password, file, and key alias"
+            exit 1
           fi
 
-      - name: Build APK
-        run: |
-          if [ "$BUILD_VARIANT" = "release" ]; then
-            gradle assembleRelease
-          else
-            gradle assembleDebug
-          fi
+          {
+            echo "MASASAATI_KEYSTORE_FILE=$key_path"
+            echo "MASASAATI_KEYSTORE_PASSWORD=$MASASAATI_KEYSTORE_PASSWORD"
+            echo "MASASAATI_KEY_ALIAS=$MASASAATI_KEY_ALIAS"
+            echo "MASASAATI_KEY_PASSWORD=$MASASAATI_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        run: gradle assembleRelease
 
       - name: Name and verify APK
         run: |
-          if [ "$BUILD_VARIANT" = "release" ]; then
-            cp app/build/outputs/apk/release/app-release.apk app/build/outputs/saat.apk
-          else
-            cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/saat.apk
-          fi
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify app/build/outputs/saat.apk
+          set -euo pipefail
+          apk_path="app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk_path"
+          cp "$apk_path" app/build/outputs/saat.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/saat.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: saat-apk
           path: app/build/outputs/saat.apk
+          if-no-files-found: error
+          retention-days: 14
