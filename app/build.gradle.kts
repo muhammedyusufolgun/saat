@@ -13,8 +13,8 @@ android {
         applicationId = "tr.com.olgun.masasaati"
         minSdk = 23
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
     }
 
     signingConfigs {
