@@ -37,62 +37,60 @@ jobs:
       - name: Build release APK
         run: gradle :app:assembleRelease
 
-      - name: Validate release signing secrets
-        id: signing
-        env:
-          MASASAATI_KEYSTORE_BASE64: ${{ secrets.MASASAATI_KEYSTORE_BASE64 }}
-          MASASAATI_KEYSTORE_PASSWORD: ${{ secrets.MASASAATI_KEYSTORE_PASSWORD }}
-          MASASAATI_KEY_ALIAS: ${{ secrets.MASASAATI_KEY_ALIAS }}
-          MASASAATI_KEY_PASSWORD: ${{ secrets.MASASAATI_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for name in MASASAATI_KEYSTORE_BASE64 MASASAATI_KEYSTORE_PASSWORD MASASAATI_KEY_ALIAS MASASAATI_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error title=Missing signing secret::$name is not set"
-              exit 1
-            fi
-          done
-
-          key_path="$RUNNER_TEMP/masa-saati-release.jks"
-          if ! printf '%s' "$MASASAATI_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$key_path"; then
-            echo "::error title=Invalid keystore::MASASAATI_KEYSTORE_BASE64 is not valid Base64"
-            exit 1
-          fi
-          if [ ! -s "$key_path" ]; then
-            echo "::error title=Empty keystore::Decoded keystore file is empty"
-            exit 1
-          fi
-          if ! keytool -list -keystore "$key_path" -storepass "$MASASAATI_KEYSTORE_PASSWORD" -alias "$MASASAATI_KEY_ALIAS" >/dev/null 2>&1; then
-            echo "::error title=Keystore validation failed::Check the keystore password, file, and key alias"
-            exit 1
-          fi
-
-      - name: Upload unsigned APK for offline signing
-        if: failure() && steps.signing.outcome == 'failure'
+      - name: Upload APK for offline signing
         uses: actions/upload-artifact@v4
         with:
           name: saat-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 7
 
-      - name: Sign and verify APK
-        env:
-          MASASAATI_KEYSTORE_PASSWORD: ${{ secrets.MASASAATI_KEYSTORE_PASSWORD }}
-          MASASAATI_KEY_ALIAS: ${{ secrets.MASASAATI_KEY_ALIAS }}
-          MASASAATI_KEY_PASSWORD: ${{ secrets.MASASAATI_KEY_PASSWORD }}
+      - name: Verify release certificate and APK contents
         run: |
           set -euo pipefail
-          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$signer" sign --ks "$RUNNER_TEMP/masa-saati-release.jks" --ks-key-alias "$MASASAATI_KEY_ALIAS" \
-            --ks-pass env:MASASAATI_KEYSTORE_PASSWORD --key-pass env:MASASAATI_KEY_PASSWORD \
-            --out app/build/outputs/saat.apk app/build/outputs/apk/release/app-release-unsigned.apk
-          "$signer" verify --verbose --print-certs app/build/outputs/saat.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs download/saat.apk | tee "$RUNNER_TEMP/signer.txt"
+          grep -Fq 'certificate SHA-256 digest: 83e5378ff7f77120b5e6a28be68a58f60dfc01fb20238c971b2ffd630213fdcd' "$RUNNER_TEMP/signer.txt"
+          python3 - <<'PY'
+          import re
+          from zipfile import ZipFile
+          def payload(path):
+              with ZipFile(path) as apk:
+                  files = {}
+                  for name in apk.namelist():
+                      if re.fullmatch(r'META-INF/(MANIFEST\.MF|[^/]+\.(?:RSA|SF))', name):
+                          continue
+                      if name in files:
+                          raise ValueError(f'Duplicate APK entry: {name}')
+                      data = apk.read(name)
+                      if name == 'META-INF/version-control-info.textproto':
+                          data = re.sub(rb'(?<=revision: ")[0-9a-f]{40}(?=")', b'COMMIT', data)
+                      files[name] = data
+                  return files
+          if payload('download/saat.apk') != payload('app/build/outputs/apk/release/app-release-unsigned.apk'):
+              raise SystemExit('The signed APK differs from this build. Sign the new unsigned artifact.')
+          PY
 
-      - name: Upload APK
+      - name: Upload verified release
         uses: actions/upload-artifact@v4
         with:
           name: saat-apk
-          path: app/build/outputs/saat.apk
+          path: download/saat.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            adb install download/saat.apk
+            adb shell am start -W -n tr.com.olgun.masasaati/.MainActivity | grep -F 'Status: ok'
+            adb shell pidof tr.com.olgun.masasaati
