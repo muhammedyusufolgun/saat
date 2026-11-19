@@ -50,7 +50,7 @@ jobs:
           done
 
           key_path="$RUNNER_TEMP/masa-saati-release.jks"
-          if ! printf '%s' "$MASASAATI_KEYSTORE_BASE64" | base64 --decode > "$key_path"; then
+          if ! printf '%s' "$MASASAATI_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$key_path"; then
             echo "::error title=Invalid keystore::MASASAATI_KEYSTORE_BASE64 is not valid Base64"
             exit 1
           fi
